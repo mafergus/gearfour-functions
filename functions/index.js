@@ -4,8 +4,8 @@ const cors = require('cors')
 const express = require('express');
 
 // Twilio Credentials
-const accountSid = 'AC156a713ffab5d74e2a6a116a1235986c';
-const authToken = '07491767d2dfd5ea037510cb17d10bbb';
+const accountSid = functions.config().gearfour.twiliosid;
+const authToken = functions.config().gearfour.twilioaccount;
 const client = require('twilio')(accountSid, authToken);
 const MessagingResponse = require('twilio').twiml.MessagingResponse;
 
@@ -16,7 +16,7 @@ const app = express();
 app.use(cors({ origin: true }));
 app.post('/createWorkOrder', (req, res) => { doCreateWorkOrder(req, res) });
 app.post('/notifyCustomerPickup', (req, res) => { doNotifyCustomerPickup(req, res) });
-// app.post('/handleIncoming/', (req, res) => { doHandleIncoming(req, res) });
+app.post('/sendMessage/', (req, res) => { doSendMessage(req, res) });
 // app.put('/:id', (req, res) => {//...});
 // app.delete('/:id', (req, res) => {//...});
 
@@ -55,8 +55,8 @@ function doCreateWorkOrder(req, res) {
       return theUser;
     })
     .then(userDoc => {
-      console.log("user: ", userDoc);
-      return db.collection('workOrder').add({
+      console.log("user: ", userDoc.data());
+      return db.collection('workOrders').add({
         customerId: userDoc.id,
         garage: query.garage
       });
@@ -79,6 +79,32 @@ function doNotifyCustomerPickup(req, res) {
 
   // }
   return res.send({ status: "Error notifying customer" });
+}
+
+function doSendMessage(req, res) {
+  console.log("req.query: ", req.query);
+  const query = req.query;
+
+  if (query.hasOwnProperty("to") && query.hasOwnProperty("message")) {
+    const recipients = JSON.parse(req.query['to']);
+    console.log("Recipients: ", recipients, " message: ", req.query.message);
+    recipients.forEach(recipient => {
+      admin.database().ref('customers/' + recipient)
+      .once('value')
+      .then(snapshot => {
+        if (snapshot.exists()) {
+          const number = snapshot.val().phoneNumber;
+          console.log("Got customer phone number: ", number);
+          return sendMessage(number, req.query.message);
+        }
+        return null;
+      })
+      .catch(error => console.log("Error: ", error));
+    });
+    return res.send({ status: "success" });
+  } else {
+    return res.send({ status: "error", cause: "Invalid request" });
+  }
 }
 
 function sendMessage(to, body) {
